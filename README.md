@@ -14,15 +14,7 @@
 > **Простая установка и настройка**  
 > **Поддержка работы как системный сервис**
 
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/99164769/222405305-d0d7954f-f9ed-4e35-89ea-a555ec168eb3.png" alt="WB Bot Preview" width="600">
-</p>
-
 ## Функционал
-
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/99164769/222407389-6a28f7df-6711-4f1b-b413-39629dc9f5c7.jpg" alt="Notifications Example" width="300">
-</p>
 
 - 🔔 **Уведомления о новых заказах**
   - Артикул продавца
