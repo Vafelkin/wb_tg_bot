@@ -1,6 +1,19 @@
 # Telegram бот для мониторинга Wildberries
 
+[![Python 3.7+](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Telegram Bot API](https://img.shields.io/badge/Telegram%20Bot%20API-✓-blue.svg)](https://core.telegram.org/bots/api)
+[![Wildberries API](https://img.shields.io/badge/Wildberries%20API-✓-purple.svg)](https://suppliers-api.wildberries.ru/)
+[![Maintenance](https://img.shields.io/badge/Maintained-yes-green.svg)](https://github.com/Vafelkin/wb_tg_bot/commits/main)
+[![Last Commit](https://img.shields.io/github/last-commit/Vafelkin/wb_tg_bot.svg)](https://github.com/Vafelkin/wb_tg_bot/commits/main)
+[![Code style: black](https://img.shields.io/badge/code%20style-standard-black.svg)](https://github.com/psf/black)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-blue?logo=telegram)](https://t.me/BotFather)
+
 Бот для отслеживания новых заказов, выкупов, отзывов и вопросов на маркетплейсе Wildberries с отправкой уведомлений в Telegram.
+
+<p align="center">
+  <img src="https://i.imgur.com/L4c8LNj.png" alt="WB TG Bot Демонстрация" width="400">
+</p>
 
 ## 📋 Функционал
 
