@@ -27,10 +27,14 @@ class WildberriesAPI:
         self.feedback_token = feedback_token
         self.stats_headers = {'Authorization': stats_token}
         self.feedback_headers = {'Authorization': f'Bearer {feedback_token}'}
+        # При первом запуске используем ORDERS_DAYS_LOOK_BACK
         self._last_order_time = datetime.now() - timedelta(days=ORDERS_DAYS_LOOK_BACK)
+        # Для продаж изначально берем данные за последние SALES_DAYS_LOOK_BACK дни
+        self._last_sales_time = datetime.now() - timedelta(days=SALES_DAYS_LOOK_BACK)
         self._processed_orders = set()  # Множество для хранения обработанных srid
         self._processed_sales = set()   # Множество для хранения обработанных saleID
         self._last_feedback_check = None
+        self._first_run = True  # Флаг первого запуска
     
     def _parse_date(self, date_str):
         """Парсинг даты из API с поддержкой разных форматов"""
@@ -52,6 +56,12 @@ class WildberriesAPI:
         all_orders = []
         next_date_from = self._last_order_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
         
+        # Если это первый запуск, отправляем уведомление о том, что бот начал работу
+        first_run = self._first_run
+        if first_run:
+            print(f"🚀 Первый запуск, получаем заказы за последние {ORDERS_DAYS_LOOK_BACK} дней")
+            self._first_run = False
+        
         while True:
             try:
                 url = f"{WB_API_BASE_URL}/api/v1/supplier/orders"
@@ -69,16 +79,21 @@ class WildberriesAPI:
                 # Если нет заказов, прерываем цикл
                 if not orders:
                     break
-                    
-                # Добавляем только необработанные заказы
-                new_orders = [
-                    order for order in orders 
-                    if order.get('srid') not in self._processed_orders
-                ]
-                all_orders.extend(new_orders)
                 
-                # Обновляем множество обработанных заказов
-                self._processed_orders.update(order.get('srid') for order in new_orders)
+                # При первом запуске просто сохраняем все srid в множестве обработанных
+                # и не отправляем уведомления, чтобы не спамить старыми заказами
+                if first_run:
+                    self._processed_orders.update(order.get('srid') for order in orders)
+                else:
+                    # Добавляем только необработанные заказы
+                    new_orders = [
+                        order for order in orders 
+                        if order.get('srid') not in self._processed_orders
+                    ]
+                    all_orders.extend(new_orders)
+                    
+                    # Обновляем множество обработанных заказов
+                    self._processed_orders.update(order.get('srid') for order in new_orders)
                 
                 # Если получили меньше максимального количества, значит это последняя страница
                 if len(orders) < MAX_ORDERS_PER_REQUEST:
@@ -94,13 +109,13 @@ class WildberriesAPI:
                 print(f"Ошибка при получении заказов: {e}")
                 break
         
-        # Обновляем время последнего проверенного заказа
-        if all_orders:
-            self._last_order_time = max(
-                self._parse_date(order['date'])
-                for order in all_orders
-            )
+        # Обновляем время последнего проверенного заказа на текущее время
+        self._last_order_time = datetime.now()
         
+        # При первом запуске возвращаем пустой список, чтобы не спамить уведомлениями
+        if first_run:
+            return []
+            
         return all_orders
 
     def check_new_feedbacks(self):
@@ -141,10 +156,18 @@ class WildberriesAPI:
             print(f"Ошибка при проверке отзывов и вопросов: {e}")
             return None
 
-    def get_sales(self, days_back=1):
+    def get_sales(self, days_back=None):
         """Получение данных о продажах с Wildberries с поддержкой пагинации"""
         all_sales = []
-        date_from = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%dT00:00:00.000Z')
+        
+        # Если это первый запуск, используем SALES_DAYS_LOOK_BACK
+        # Иначе используем время последней проверки
+        first_run = days_back is not None
+        if first_run:
+            date_from = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%dT00:00:00.000Z')
+            print(f"🚀 Получаем продажи за последние {days_back} дней")
+        else:
+            date_from = self._last_sales_time.strftime('%Y-%m-%dT%H:%M:%S.000Z')
         
         while True:
             try:
@@ -164,8 +187,21 @@ class WildberriesAPI:
                 # Если нет продаж, прерываем цикл
                 if not sales:
                     break
+                
+                # При первом запуске просто сохраняем все saleID в множестве обработанных
+                # и не отправляем уведомления, чтобы не спамить старыми продажами
+                if first_run:
+                    self._processed_sales.update(sale.get('saleID') for sale in sales if sale.get('saleID'))
+                else:    
+                    # Добавляем только необработанные продажи
+                    new_sales = [
+                        sale for sale in sales 
+                        if sale.get('saleID') not in self._processed_sales
+                    ]
+                    all_sales.extend(new_sales)
                     
-                all_sales.extend(sales)
+                    # Обновляем множество обработанных продаж
+                    self._processed_sales.update(sale.get('saleID') for sale in new_sales if sale.get('saleID'))
                 
                 # Если получили меньше максимального количества, значит это последняя страница
                 if len(sales) < MAX_ORDERS_PER_REQUEST:
@@ -187,6 +223,13 @@ class WildberriesAPI:
                 print(f"Ошибка при получении продаж: {e}")
                 break
         
+        # Обновляем время последней проверки продаж на текущее время
+        self._last_sales_time = datetime.now()
+        
+        # При первом запуске возвращаем пустой список, чтобы не спамить уведомлениями
+        if first_run:
+            return []
+            
         return all_sales
 
 class TelegramNotifier:
@@ -289,28 +332,24 @@ async def check_sales():
     
     print(f"💰 Проверка выкупов ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
     
-    # Получаем выкупы за указанный период
-    sales = wb_api.get_sales(days_back=SALES_DAYS_LOOK_BACK)
-    new_sales = []
+    # При первом запуске передаем days_back, при последующих запросах - не передаем
+    # чтобы использовалось время последней проверки
+    static_run = False
+    if not hasattr(check_sales, 'first_run'):
+        check_sales.first_run = True
+        static_run = True
     
-    for sale in sales:
-        try:
-            # Проверяем, не обрабатывали ли мы уже этот выкуп
-            sale_id = sale.get('saleID')
-            if sale_id in wb_api._processed_sales:
-                continue
-                
-            sale_date = wb_api._parse_date(sale.get('date', sale.get('lastChangeDate')))
-            new_sales.append(sale)
-            # Добавляем ID выкупа в множество обработанных
-            if sale_id:
-                wb_api._processed_sales.add(sale_id)
-        except ValueError:
-            continue
+    if check_sales.first_run:
+        # Получаем выкупы за указанный период
+        sales = wb_api.get_sales(days_back=SALES_DAYS_LOOK_BACK)
+        check_sales.first_run = False
+    else:
+        # Получаем выкупы за период с момента последней проверки
+        sales = wb_api.get_sales()
     
-    if new_sales:
-        print(f"📈 Найдено {len(new_sales)} новых выкупов")
-        for sale in new_sales:
+    if sales:
+        print(f"📈 Найдено {len(sales)} новых выкупов")
+        for sale in sales:
             message = format_sale_message(sale)
             await notifier.send_notification(message)
             await asyncio.sleep(0.5)
@@ -341,7 +380,7 @@ def main():
         "🟢 <b>Мониторинг запущен</b>\n\n"
         f"⏱ Время запуска: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n"
         f"🔄 Интервал проверки заказов: {CHECK_INTERVAL // 60} минут\n"
-        f"🔄 Интервал проверки отзывов: {FEEDBACK_CHECK_INTERVAL} секунд\n"
+        f"🔄 Интервал проверки отзывов: {FEEDBACK_CHECK_INTERVAL // 60} минут\n"
         f"🔄 Интервал проверки продаж: {SALES_CHECK_INTERVAL // 60} минут"
     ))
     

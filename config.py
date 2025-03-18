@@ -18,7 +18,7 @@ WB_FEEDBACK_API_URL = 'https://feedbacks-api.wildberries.ru'
 CHECK_INTERVAL = 1800  # 30 минут (так как API обновляется раз в 30 минут)
 
 # Интервал проверки отзывов и вопросов (в секундах)
-FEEDBACK_CHECK_INTERVAL = 600  # 10 минут между запросами
+FEEDBACK_CHECK_INTERVAL = 1800  # 30 минут между запросами
 
 # Интервал проверки продаж (в секундах)
 SALES_CHECK_INTERVAL = 1800  # 30 минут между запросами (аналогично заказам)
