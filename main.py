@@ -9,20 +9,27 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     WB_API_TOKEN,
+    WB_FEEDBACK_TOKEN,
     WB_API_BASE_URL,
+    WB_FEEDBACK_API_URL,
     CHECK_INTERVAL,
     FEEDBACK_CHECK_INTERVAL,
+    SALES_CHECK_INTERVAL,
     ORDERS_DAYS_LOOK_BACK,
     MAX_ORDERS_PER_REQUEST,
-    PAGINATION_DELAY
+    PAGINATION_DELAY,
+    SALES_DAYS_LOOK_BACK
 )
 
 class WildberriesAPI:
-    def __init__(self, token):
-        self.token = token
-        self.headers = {'Authorization': token}
+    def __init__(self, stats_token, feedback_token):
+        self.stats_token = stats_token
+        self.feedback_token = feedback_token
+        self.stats_headers = {'Authorization': stats_token}
+        self.feedback_headers = {'Authorization': f'Bearer {feedback_token}'}
         self._last_order_time = datetime.now() - timedelta(days=ORDERS_DAYS_LOOK_BACK)
         self._processed_orders = set()  # Множество для хранения обработанных srid
+        self._processed_sales = set()   # Множество для хранения обработанных saleID
         self._last_feedback_check = None
     
     def _parse_date(self, date_str):
@@ -50,7 +57,7 @@ class WildberriesAPI:
                 url = f"{WB_API_BASE_URL}/api/v1/supplier/orders"
                 response = requests.get(
                     url,
-                    headers={'Authorization': f'Bearer {self.token}'},
+                    headers=self.stats_headers,
                     params={
                         'dateFrom': next_date_from,
                         'flag': 0  # 0 - новые заказы
@@ -98,14 +105,13 @@ class WildberriesAPI:
 
     def check_new_feedbacks(self):
         """Проверка наличия новых отзывов и вопросов"""
-        # Проверяем, прошла ли минута с последней проверки
         current_time = datetime.now()
-        if self._last_feedback_check and (current_time - self._last_feedback_check).total_seconds() < 60:
-            return None  # Возвращаем None, если прошло меньше минуты
+        if self._last_feedback_check and (current_time - self._last_feedback_check).total_seconds() < 600:
+            return None
 
         try:
-            url = "https://feedbacks-api.wildberries.ru/api/v1/new-feedbacks-questions"
-            response = requests.get(url, headers=self.headers)
+            url = f"{WB_FEEDBACK_API_URL}/api/v1/new-feedbacks-questions"
+            response = requests.get(url, headers=self.feedback_headers)
             response.raise_for_status()
             result = response.json()
 
@@ -135,6 +141,54 @@ class WildberriesAPI:
             print(f"Ошибка при проверке отзывов и вопросов: {e}")
             return None
 
+    def get_sales(self, days_back=1):
+        """Получение данных о продажах с Wildberries с поддержкой пагинации"""
+        all_sales = []
+        date_from = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%dT00:00:00.000Z')
+        
+        while True:
+            try:
+                url = f"{WB_API_BASE_URL}/api/v1/supplier/sales"
+                response = requests.get(
+                    url,
+                    headers=self.stats_headers,
+                    params={
+                        'dateFrom': date_from,
+                        'flag': 0  # 0 - все продажи
+                    },
+                    timeout=30  # Таймаут 30 секунд
+                )
+                response.raise_for_status()
+                sales = response.json()
+                
+                # Если нет продаж, прерываем цикл
+                if not sales:
+                    break
+                    
+                all_sales.extend(sales)
+                
+                # Если получили меньше максимального количества, значит это последняя страница
+                if len(sales) < MAX_ORDERS_PER_REQUEST:
+                    break
+                    
+                # Берем дату последней продажи для следующего запроса
+                date_from = sales[-1]['lastChangeDate']
+                
+                # Добавляем задержку между запросами
+                time.sleep(PAGINATION_DELAY)
+                
+            except requests.exceptions.Timeout:
+                print("❌ Превышено время ожидания ответа от сервера (таймаут).")
+                break
+            except requests.exceptions.ConnectionError:
+                print("❌ Ошибка соединения с сервером.")
+                break
+            except requests.exceptions.RequestException as e:
+                print(f"Ошибка при получении продаж: {e}")
+                break
+        
+        return all_sales
+
 class TelegramNotifier:
     def __init__(self, bot_token, chat_id):
         self.bot_token = bot_token
@@ -155,8 +209,8 @@ class TelegramNotifier:
             print(f"Ошибка при отправке уведомления: {e}")
 
 def format_order_message(order):
-    """Форматирование сообщения о заказе"""
-    wb_api = WildberriesAPI(WB_API_TOKEN)
+    """Форматирование сообщения о новом заказе (товар заказан, но еще не получен)"""
+    wb_api = WildberriesAPI(WB_API_TOKEN, WB_FEEDBACK_TOKEN)
     order_date = wb_api._parse_date(order['date'])
     return (
         f"🛍 <b>Новый заказ!</b>\n\n"
@@ -169,14 +223,31 @@ def format_order_message(order):
         f"📅 Дата: {order_date.strftime('%d.%m.%Y %H:%M')}"
     )
 
+def format_sale_message(sale):
+    """Форматирование сообщения о выкупе (товар получен и принят покупателем)"""
+    wb_api = WildberriesAPI(WB_API_TOKEN, WB_FEEDBACK_TOKEN)
+    sale_date = wb_api._parse_date(sale.get('date', sale.get('lastChangeDate')))
+    
+    return (
+        f"💰 <b>Новый выкуп!</b>\n\n"
+        f"📝 Артикул продавца: {sale.get('supplierArticle')}\n"
+        f"🏷️ Бренд: {sale.get('brand', 'Не указан')}\n"
+        f"📦 Название: {sale.get('subject', 'Не указано')}\n"
+        f"💵 Цена розничная: {sale.get('forPay', 0)} ₽\n"
+        f"🧮 Комиссия: {sale.get('feeWB', 0)} ₽\n"
+        f"💸 К выплате: {sale.get('finishedPrice', 0)} ₽\n"
+        f"📍 Регион: {sale.get('regionName', 'Не указан')}\n"
+        f"📅 Дата: {sale_date.strftime('%d.%m.%Y %H:%M')}"
+    )
+
 async def send_status_notification(message):
     """Отправка уведомления о статусе работы скрипта"""
     notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     await notifier.send_notification(message)
 
 async def check_orders():
-    """Проверка новых заказов и отправка уведомлений"""
-    wb_api = WildberriesAPI(WB_API_TOKEN)
+    """Проверка новых заказов (товары заказаны, но еще не получены) и отправка уведомлений"""
+    wb_api = WildberriesAPI(WB_API_TOKEN, WB_FEEDBACK_TOKEN)
     notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     
     print(f"🔍 Проверка новых заказов ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
@@ -193,7 +264,7 @@ async def check_orders():
 
 async def check_feedbacks():
     """Проверка новых отзывов и вопросов"""
-    wb_api = WildberriesAPI(WB_API_TOKEN)
+    wb_api = WildberriesAPI(WB_API_TOKEN, WB_FEEDBACK_TOKEN)
     notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     
     print(f"👀 Проверка отзывов и вопросов ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
@@ -211,14 +282,47 @@ async def check_feedbacks():
             await notifier.send_notification(message)
             print(f"📢 Обнаружено: {feedback_data['feedbacks_count']} отзывов, {feedback_data['questions_count']} вопросов")
 
+async def check_sales():
+    """Проверка новых выкупов (товары получены и приняты покупателем) и отправка уведомлений"""
+    wb_api = WildberriesAPI(WB_API_TOKEN, WB_FEEDBACK_TOKEN)
+    notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    
+    print(f"💰 Проверка выкупов ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
+    
+    # Получаем выкупы за указанный период
+    sales = wb_api.get_sales(days_back=SALES_DAYS_LOOK_BACK)
+    new_sales = []
+    
+    for sale in sales:
+        try:
+            # Проверяем, не обрабатывали ли мы уже этот выкуп
+            sale_id = sale.get('saleID')
+            if sale_id in wb_api._processed_sales:
+                continue
+                
+            sale_date = wb_api._parse_date(sale.get('date', sale.get('lastChangeDate')))
+            new_sales.append(sale)
+            # Добавляем ID выкупа в множество обработанных
+            if sale_id:
+                wb_api._processed_sales.add(sale_id)
+        except ValueError:
+            continue
+    
+    if new_sales:
+        print(f"📈 Найдено {len(new_sales)} новых выкупов")
+        for sale in new_sales:
+            message = format_sale_message(sale)
+            await notifier.send_notification(message)
+            await asyncio.sleep(0.5)
+    else:
+        print("📉 Новых выкупов нет")
+
 def signal_handler(signum, frame):
     """Обработчик сигналов для корректного завершения работы"""
     print("\n⛔️ Получен сигнал завершения. Останавливаем работу...")
-    # Отправляем уведомление об остановке
-    asyncio.run(send_status_notification(
-        "🔴 <b>Мониторинг заказов остановлен</b>\n\n"
-        f"⏱ Время остановки: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
-    ))
+    # Просто выводим сообщение и выходим, без отправки уведомления
+    # для предотвращения ошибок с asyncio
+    print("🔴 Мониторинг заказов остановлен")
     sys.exit(0)
 
 def main():
@@ -230,22 +334,26 @@ def main():
     print("🚀 Запуск мониторинга заказов и отзывов Wildberries...")
     print(f"⏰ Интервал проверки заказов: {CHECK_INTERVAL} секунд")
     print(f"⏰ Интервал проверки отзывов: {FEEDBACK_CHECK_INTERVAL} секунд")
+    print(f"⏰ Интервал проверки продаж: {SALES_CHECK_INTERVAL} секунд")
     
     # Отправляем уведомление о запуске
     asyncio.run(send_status_notification(
         "🟢 <b>Мониторинг запущен</b>\n\n"
         f"⏱ Время запуска: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}\n"
         f"🔄 Интервал проверки заказов: {CHECK_INTERVAL // 60} минут\n"
-        f"🔄 Интервал проверки отзывов: {FEEDBACK_CHECK_INTERVAL} секунд"
+        f"🔄 Интервал проверки отзывов: {FEEDBACK_CHECK_INTERVAL} секунд\n"
+        f"🔄 Интервал проверки продаж: {SALES_CHECK_INTERVAL // 60} минут"
     ))
     
     # Выполняем первую проверку сразу при запуске
     asyncio.run(check_orders())
     asyncio.run(check_feedbacks())
+    asyncio.run(check_sales())
     
     # Планируем регулярные проверки
     schedule.every(CHECK_INTERVAL).seconds.do(lambda: asyncio.run(check_orders()))
     schedule.every(FEEDBACK_CHECK_INTERVAL).seconds.do(lambda: asyncio.run(check_feedbacks()))
+    schedule.every(SALES_CHECK_INTERVAL).seconds.do(lambda: asyncio.run(check_sales()))
     
     while True:
         schedule.run_pending()

@@ -1,20 +1,57 @@
-# Environments
+# Файлы с конфиденциальными данными
 .env
-.venv
-env/
-venv/
-ENV/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
 
-# Python
+# Кеш Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# OS specific
-.DS_Store
-.DS_Store?
-._*
+# Виртуальные окружения
+venv/
+ENV/
+env/
+.venv/
 
-# IDE
+# Файлы IDE
 .idea/
-.vscode/ 
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Логи
+*.log
+
+# Локальные заметки
+*.todo
+notes.md
+
+# Другие временные файлы
+*.tmp
+*.temp
+.coverage
+htmlcov/
+.pytest_cache/ 
