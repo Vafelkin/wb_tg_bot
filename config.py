@@ -14,23 +14,11 @@ WB_FEEDBACK_TOKEN = os.getenv('WB_FEEDBACK_TOKEN')  # Токен для отзы
 WB_API_BASE_URL = 'https://statistics-api.wildberries.ru'
 WB_FEEDBACK_API_URL = 'https://feedbacks-api.wildberries.ru'
 
-# Интервал проверки новых заказов (в секундах)
-CHECK_INTERVAL = 1800  # 30 минут (так как API обновляется раз в 30 минут)
+# Интервал проверки новых данных (в секундах)
+CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '1800'))  # 30 минут по умолчанию
 
-# Интервал проверки отзывов и вопросов (в секундах)
-FEEDBACK_CHECK_INTERVAL = 1800  # 30 минут между запросами
-
-# Интервал проверки продаж (в секундах)
-SALES_CHECK_INTERVAL = 1800  # 30 минут между запросами (аналогично заказам)
-
-# Количество дней для проверки заказов
-ORDERS_DAYS_LOOK_BACK = int(os.getenv('ORDERS_DAYS_LOOK_BACK', 2))  # проверять заказы за последние 2 дня
-
-# Количество дней для проверки продаж
-SALES_DAYS_LOOK_BACK = int(os.getenv('SALES_DAYS_LOOK_BACK', 1))  # проверять продажи за последний день
-
-# Максимальное количество заказов в одном ответе API
-MAX_ORDERS_PER_REQUEST = 80000
+# Максимальное количество заказов/продаж в одном ответе API
+MAX_ORDERS_PER_REQUEST = int(os.getenv('MAX_ORDERS_PER_REQUEST', '80000'))
 
 # Задержка между запросами при пагинации (в секундах)
-PAGINATION_DELAY = 1 
+PAGINATION_DELAY = int(os.getenv('PAGINATION_DELAY', '1')) 

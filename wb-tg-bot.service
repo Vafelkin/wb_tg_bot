@@ -1,6 +1,14 @@
+# Файл службы systemd для автоматического запуска и поддержания работы бота
+# Расположение: /etc/systemd/system/wb-tg-bot.service
+# После изменения: systemctl daemon-reload
+# Для запуска: systemctl start wb-tg-bot
+# Для проверки статуса: systemctl status wb-tg-bot
+# Для автозапуска при загрузке: systemctl enable wb-tg-bot
+
 [Unit]
-Description=Wildberries Telegram Bot
+Description=Wildberries Telegram Bot - мониторинг заказов и продаж
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -10,6 +18,10 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/admin/wb_tg_bot/venv/bin/python /home/admin/wb_tg_bot/main.py
 Restart=always
 RestartSec=10
+# Останавливаем службу корректно
+KillSignal=SIGINT
+# Тайм-аут перед принудительным завершением (в секундах)
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target 
